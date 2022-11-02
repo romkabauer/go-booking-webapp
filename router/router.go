@@ -2,6 +2,7 @@ package router
 
 import (
 	"booking-webapp/handlers"
+	"booking-webapp/middleware"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -17,8 +18,8 @@ func SetupRoutes(app *fiber.App) {
 
 	//Conference
 	conference := api.Group("/conference")
-	conference.Get("/", handlers.GetConferences)
-	conference.Get("/:id", handlers.GetConference)
+	conference.Get("/", middleware.Authorize(), handlers.GetConferences)
+	conference.Get("/:id", middleware.Authorize(), handlers.GetConference)
 	conference.Post("/", handlers.CreateNewConference)
 	conference.Put("/:id", handlers.UpdateConference)
 	conference.Patch("/:id/name", handlers.UpdateConference)

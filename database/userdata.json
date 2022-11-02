@@ -1,6 +1,12 @@
 [
     {
         "login": "admin",
-        "password_hash": "$2a$10$MqirBUI257QuXZw0ZEyV7u.TCJrPy3H5cTBUzP1uPwmkQFhDCALd6"
+        "password_hash": "$2a$10$MqirBUI257QuXZw0ZEyV7u.TCJrPy3H5cTBUzP1uPwmkQFhDCALd6",
+        "role": "admin"
+    },
+    {
+        "login": "fake_admin",
+        "password_hash": "$2a$10$MqirBUI257QuXZw0ZEyV7u.TCJrPy3H5cTBUzP1uPwmkQFhDCALd6",
+        "role": "user"
     }
 ]

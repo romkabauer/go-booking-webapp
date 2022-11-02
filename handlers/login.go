@@ -4,6 +4,7 @@ import (
 	"booking-webapp/config"
 	"booking-webapp/database"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -51,9 +52,11 @@ func Login(c *fiber.Ctx) error {
 	claims := token.Claims.(jwt.MapClaims)
 	claims["username"] = user.Login
 	claims["exp"] = time.Now().Add(time.Hour * 8).Unix()
+	claims["role"] = user.Role
 
 	sign, enverr := config.GetSecret("SIGN")
 	if enverr != nil {
+		log.Print(enverr)
 		return c.SendStatus(fiber.StatusInternalServerError)
 	}
 

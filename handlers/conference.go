@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 )
 
@@ -17,6 +18,11 @@ func GetConferences(c *fiber.Ctx) error {
 	if readerr != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Server side problem occured while reading conferences info from database.")
 	}
+
+	if !isAdminRole(c) {
+		conferences = cleanBookingsData(conferences)
+	}
+
 	conferencesJson, err := json.MarshalIndent(conferences, "", "	")
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Server side problem occured while loading conferences info.")
@@ -30,6 +36,11 @@ func GetConference(c *fiber.Ctx) error {
 	if geterr := database.HandleGetConferenceError(geterr, c); geterr != nil {
 		return geterr
 	}
+
+	if !isAdminRole(c) {
+		conference = cleanBookingsData([]model.Conference{conference})[0]
+	}
+
 	conferenceJson, err := json.MarshalIndent(conference, "", "	")
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Server side problem occured while loading conferences info.")
@@ -194,4 +205,19 @@ func isValidConferenceTotalTickets(conf model.Conference, isNew bool) error {
 		return nil
 	}
 	return nil
+}
+
+func isAdminRole(c *fiber.Ctx) bool {
+	token := c.Locals("identity").(*jwt.Token)
+	claims := token.Claims.(jwt.MapClaims)
+	return claims["role"].(string) == "admin"
+}
+
+func cleanBookingsData(conferences []model.Conference) []model.Conference {
+	for confIndex, conference := range conferences {
+		conference.Bookings = []model.Booking{}
+		conferences[confIndex] = conference
+	}
+
+	return conferences
 }
