@@ -1,7 +1,11 @@
-# TO DO:
+# Conference managing and booking service
+
+Learning Go by creating this service
+
+## TODO List:
 ### Persist booking data in the file locally            DONE
-### Make web-service
-###### POST /login/admin
+### Make web-service                                    15/16
+###### POST /login/admin                                DONE
 ###### POST /login/user
 ###### GET /conference                                  DONE
 ###### GET /conference/{id}                             DONE
@@ -18,5 +22,5 @@
 ###### PATCH /conference/{confId}/booking/{id}/name     DONE
 ###### PATCH /conference/{confId}/booking/{id}/tickets  DONE
 ### Cover with tests
-### Pack to the Docker container
+### Pack to the Docker container                        DONE
 ### Store data in local no-SQL DB docker instance
