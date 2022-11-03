@@ -3,14 +3,14 @@
 		"id": "8db0f1f0f7984ba3a129a390bc9b14a7",
 		"conference_name": "Boston 2023",
 		"total_tickets": 150,
-		"remaining_tickets": 130,
+		"remaining_tickets": 100,
 		"bookings": [
 			{
 				"id": "8dac1ffa30554643a6780a6837c5ecb7",
 				"customer_name": "Roman Bauer",
-				"tickets_booked": 20,
+				"tickets_booked": 50,
 				"booked_at": "2022-11-02T16:29:20+03:00",
-				"updated_at": "2022-11-02T16:29:20+03:00",
+				"updated_at": "2022-11-03T11:47:26+03:00",
 				"is_canceled": false
 			}
 		]

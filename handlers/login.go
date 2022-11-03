@@ -3,6 +3,7 @@ package handlers
 import (
 	"booking-webapp/config"
 	"booking-webapp/database"
+	"booking-webapp/model"
 	"fmt"
 	"log"
 	"time"
@@ -25,34 +26,37 @@ func Login(c *fiber.Ctx) error {
 
 	var creds = new(Credentials)
 
-	if err := c.BodyParser(&creds); err != nil {
+	isAnonymousCall := false
+
+	err := c.BodyParser(&creds)
+	if err == fiber.ErrUnprocessableEntity {
+		isAnonymousCall = true
+	} else if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
 			"message": "Error on login request when parse credentials",
 			"data":    err})
 	}
 
-	user, geterr := database.GetUserData(creds.Login)
-	if geterr != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Error on login request when comparing user data",
-			"data":    fmt.Sprintf("%v", geterr)})
-	}
-
-	if !isPasswordHashCorrect(user.HashedPassword, creds.Password) {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Invalid password",
-			"data":    nil})
-	}
-
 	token := jwt.New(jwt.SigningMethodHS256)
-
 	claims := token.Claims.(jwt.MapClaims)
-	claims["username"] = user.Login
 	claims["exp"] = time.Now().Add(time.Hour * 8).Unix()
-	claims["role"] = user.Role
+
+	if isAnonymousCall {
+		claims["username"] = "anonymous"
+		claims["role"] = "anonymous"
+	} else {
+		user, autherr := authenticate(creds.Login, creds.Password)
+		if autherr != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Error on login request when comparing user data",
+				"data":    autherr})
+		}
+
+		claims["username"] = user.Login
+		claims["role"] = user.Role
+	}
 
 	sign, enverr := config.GetSecret("SIGN")
 	if enverr != nil {
@@ -66,4 +70,17 @@ func Login(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"status": "success", "message": "Success login", "data": t})
+}
+
+func authenticate(login string, pass string) (model.UserData, error) {
+	user, geterr := database.GetUserData(login)
+	if geterr != nil {
+		return model.UserData{}, fmt.Errorf("%v", geterr)
+	}
+
+	if !isPasswordHashCorrect(user.HashedPassword, pass) {
+		return model.UserData{}, fmt.Errorf("invalid password")
+	}
+
+	return user, nil
 }

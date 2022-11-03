@@ -4,9 +4,9 @@ Learning Go by creating this service
 
 ## TODO List:
 ### Persist booking data in the file locally            DONE
-### Make web-service                                    15/16
-###### POST /login/admin                                DONE
-###### POST /login/user
+### Make web-service                                    DONE
+###### POST /login                                      DONE
+###### POST /login for anonymous clients                DONE
 ###### GET /conference                                  DONE
 ###### GET /conference/{id}                             DONE
 ###### POST /conference                                 DONE
