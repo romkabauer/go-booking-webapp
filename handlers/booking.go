@@ -103,13 +103,13 @@ func CreateBooking(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "error",
 			"message": "incorrect input for booking parameters",
-			"data":    customerNameValidation})
+			"data":    fmt.Sprint(customerNameValidation)})
 	}
 	if numberOfTicketsValidation != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "error",
 			"message": "incorrect input for booking parameters",
-			"data":    numberOfTicketsValidation})
+			"data":    fmt.Sprint(numberOfTicketsValidation)})
 	}
 
 	conference.RemainingTickets = conference.RemainingTickets - newBooking.TicketsBooked
@@ -190,7 +190,7 @@ func UpdateBooking(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "error",
 			"message": "incorrect input for booking parameters",
-			"data":    validationErr})
+			"data":    fmt.Sprint(validationErr)})
 	}
 
 	updatedBooking.Id = booking.Id

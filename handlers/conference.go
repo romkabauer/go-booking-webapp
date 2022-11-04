@@ -82,7 +82,7 @@ func CreateNewConference(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "error",
 			"message": "incorrect input for conferrence parameters",
-			"data":    validationErr})
+			"data":    fmt.Sprint(validationErr)})
 	}
 
 	newUuid, _ := uuid.NewRandom()
@@ -151,7 +151,7 @@ func UpdateConference(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "error",
 			"message": "incorrect input for conferrence parameters",
-			"data":    validationErr})
+			"data":    fmt.Sprint(validationErr)})
 	}
 
 	updatedConf.Id = conference.Id
