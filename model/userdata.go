@@ -1,7 +1,10 @@
 package model
 
+import "go.mongodb.org/mongo-driver/bson/primitive"
+
 type UserData struct {
-	Login          string `json:"login"`
-	HashedPassword string `json:"password_hash"`
-	Role           string `json:"role"`
+	Id             primitive.ObjectID `json:"_id" bson:"_id"`
+	Login          string             `json:"login" bson:"login,omitempty"`
+	HashedPassword string             `json:"password_hash" bson:"password_hash,omitempty"`
+	Role           string             `json:"role" bson:"role,omitempty"`
 }
