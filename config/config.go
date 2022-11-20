@@ -6,7 +6,6 @@ import (
 )
 
 const LOCAL_DB_PATH string = "./database/conferences.json"
-const USER_DB_PATH string = "./database/userdata.json"
 
 func GetSecret(key string) (string, error) {
 	val, exist := os.LookupEnv(key)
