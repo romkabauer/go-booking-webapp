@@ -1,0 +1,16 @@
+version: '1'
+services:
+  booking-app:
+    image: booking-app:latest
+    environment: 
+      - MONGODB_CONNSTRING=mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb
+      - SIGN=${SIGN}
+    ports:
+      - 80:80
+  mongodb:
+    image: mongo:latest
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+    volumes:
+      - ${DB_VOLUME}

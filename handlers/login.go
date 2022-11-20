@@ -20,8 +20,8 @@ func isPasswordHashCorrect(dbHash, pass string) bool {
 
 func Login(c *fiber.Ctx) error {
 	type Credentials struct {
-		Login    string `json:"login"`
-		Password string `json:"password"`
+		Login    string `json:"login" bson:"login,omitempty"`
+		Password string `json:"password" bson:"password,omitempty"`
 	}
 
 	var creds = new(Credentials)
@@ -51,7 +51,7 @@ func Login(c *fiber.Ctx) error {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"status":  "error",
 				"message": "Error on login request when comparing user data",
-				"data":    autherr})
+				"data":    fmt.Sprint(autherr)})
 		}
 
 		claims["username"] = user.Login

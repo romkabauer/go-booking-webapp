@@ -3,14 +3,24 @@ package database
 import (
 	"booking-webapp/config"
 	"booking-webapp/model"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
+
+var ctx = context.TODO()
+var UsersCollection *mongo.Collection
+var ConferencesCollection *mongo.Collection
 
 func ReadLocalDB() ([]model.Conference, error) {
 	conferences := []model.Conference{}
@@ -112,36 +122,45 @@ func GetTotalBookings(conf model.Conference) uint {
 	return totalBookings
 }
 
-func ReadUserStorage() ([]model.UserData, error) {
-	usersData := []model.UserData{}
-
-	fileBytes, err := os.ReadFile(config.USER_DB_PATH)
-	if os.IsNotExist(err) {
-		os.WriteFile(config.USER_DB_PATH, []byte("[]"), 0644)
-		fileBytes, _ = os.ReadFile(config.USER_DB_PATH)
-	} else if err != nil {
-		return nil, err
-	}
-
-	err = json.Unmarshal(fileBytes, &usersData)
+func DBInit(collectionName string) (*mongo.Collection, error) {
+	connString, err := config.GetSecret("MONGODB_CONNSTRING")
 	if err != nil {
-		return nil, err
+		log.Fatal("cannot find connection string for DB in the environment")
 	}
 
-	return usersData, nil
+	clientOptions := options.Client().ApplyURI(connString)
+	client, err := mongo.Connect(ctx, clientOptions)
+	if err != nil {
+		return nil, fmt.Errorf("cannot connect to the db: %v", err)
+	}
+
+	err = client.Ping(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("db is not available: %v", err)
+	}
+
+	return client.Database("booking-service").Collection(collectionName), nil
 }
 
 func GetUserData(userLogin string) (model.UserData, error) {
-	usersData, readerr := ReadUserStorage()
-	if readerr != nil {
-		return model.UserData{}, fmt.Errorf("server side problem occured while reading user data from database: %v", readerr)
+	var user model.UserData
+	cur, err := UsersCollection.Find(ctx, bson.D{primitive.E{Key: "login", Value: userLogin}})
+	if err != nil {
+		return model.UserData{}, fmt.Errorf("server side problem occured while reading user data from database: %v", err)
 	}
 
-	for _, user := range usersData {
-		if user.Login == userLogin {
-			return user, nil
+	for cur.Next(ctx) {
+		err := cur.Decode(&user)
+		if err != nil {
+			return model.UserData{}, fmt.Errorf("server side problem occured while reading user data from database: %v", err)
 		}
 	}
 
-	return model.UserData{}, fmt.Errorf("user with login '%v' not found", userLogin)
+	if err := cur.Err(); err != nil {
+		return model.UserData{}, fmt.Errorf("server side problem occured while reading user data from database: %v", err)
+	}
+
+	cur.Close(ctx)
+
+	return user, nil
 }
