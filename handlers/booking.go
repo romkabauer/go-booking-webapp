@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func GetBookings(c *fiber.Ctx) error {
@@ -21,15 +21,22 @@ func GetBookings(c *fiber.Ctx) error {
 			"data":    nil})
 	}
 
-	conference, geterr := database.GetConference(c.Params("confId"))
-	if geterr := database.HandleGetConferenceError(geterr, c); geterr != nil {
+	conferences, dberr := database.GetConferences(isAdminRole(c), "_id", c.Params("confId"))
+	if dberr != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
-			"message": "server side problem occured while reading bokings info from database",
-			"data":    geterr})
+			"message": "server side problem occured while database call",
+			"data":    fmt.Sprint(dberr)})
 	}
 
-	bookingsJson, err := json.MarshalIndent(conference.Bookings, "", "	")
+	if len(conferences) == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"status":  "error",
+			"message": "conference not found",
+			"data":    nil})
+	}
+
+	bookingsJson, err := json.MarshalIndent(conferences[0].Bookings, "", "	")
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
@@ -41,16 +48,23 @@ func GetBookings(c *fiber.Ctx) error {
 }
 
 func GetBooking(c *fiber.Ctx) error {
-	conference, geterr := database.GetConference(c.Params("confId"))
-	if geterr := database.HandleGetConferenceError(geterr, c); geterr != nil {
+	conferences, dberr := database.GetConferences(true, "_id", c.Params("confId"))
+	if dberr != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
-			"message": "server side problem occured while reading bookings info from database",
-			"data":    geterr})
+			"message": "server side problem occured while database call",
+			"data":    fmt.Sprint(dberr)})
 	}
 
-	for _, booking := range conference.Bookings {
-		if booking.Id == c.Params("bookingId") {
+	if len(conferences) == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"status":  "error",
+			"message": "conference not found",
+			"data":    nil})
+	}
+
+	for _, booking := range conferences[0].Bookings {
+		if booking.Id.Hex() == c.Params("bookingId") {
 			bookingJson, err := json.MarshalIndent(booking, "", "	")
 			if err != nil {
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -80,24 +94,30 @@ func CreateBooking(c *fiber.Ctx) error {
 	}
 	newBooking.CustomerName = strings.TrimSpace(newBooking.CustomerName)
 
-	newUuid, _ := uuid.NewRandom()
-	newBooking.Id = strings.Replace(newUuid.String(), "-", "", -1)
+	newBooking.Id = primitive.NewObjectID()
 	currentTime := time.Now().Format(time.RFC3339)
 
 	newBooking.BookedAt = currentTime
 	newBooking.UpdatedAt = currentTime
 	newBooking.IsCanceled = false
 
-	conference, geterr := database.GetConference(c.Params("confId"))
-	if geterr := database.HandleGetConferenceError(geterr, c); geterr != nil {
+	conferences, dberr := database.GetConferences(true, "_id", c.Params("confId"))
+	if dberr != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
-			"message": "server side problem occured while reading bookings info from database",
-			"data":    geterr})
+			"message": "server side problem occured while database call",
+			"data":    fmt.Sprint(dberr)})
+	}
+
+	if len(conferences) == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"status":  "error",
+			"message": "conference not found",
+			"data":    nil})
 	}
 
 	customerNameValidation := customerNameValidation(newBooking.CustomerName)
-	numberOfTicketsValidation := ticketsNumberValidation(newBooking.TicketsBooked, conference.RemainingTickets)
+	numberOfTicketsValidation := ticketsNumberValidation(newBooking.TicketsBooked, conferences[0].RemainingTickets)
 
 	if customerNameValidation != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -112,14 +132,20 @@ func CreateBooking(c *fiber.Ctx) error {
 			"data":    fmt.Sprint(numberOfTicketsValidation)})
 	}
 
-	conference.RemainingTickets = conference.RemainingTickets - newBooking.TicketsBooked
-	conference.Bookings = append(conference.Bookings, *newBooking)
-	commiterr := database.CommitConferenceToLocalDB(conference)
-	if commiterr != nil {
+	updatedConf := conferences[0]
+
+	updatedConf.RemainingTickets = updatedConf.RemainingTickets - newBooking.TicketsBooked
+	updatedConf.Bookings = append(updatedConf.Bookings, *newBooking)
+
+	updateErr := database.UpdateCollectionItem(
+		updatedConf.Id,
+		updatedConf,
+		database.ConferencesCollection)
+	if updateErr != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
-			"message": "server side problem occured while saving booking info to the database",
-			"data":    commiterr})
+			"message": "db error while updating bookings info",
+			"data":    fmt.Sprint(updateErr)})
 	}
 
 	newBookingJson, err := json.MarshalIndent(newBooking, "", "	")
@@ -127,29 +153,36 @@ func CreateBooking(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
 			"message": "server side problem occured while sending booking info to client",
-			"data":    err})
+			"data":    fmt.Sprint(err)})
 	}
 
 	return c.SendString(string(newBookingJson))
 }
 
 func UpdateBooking(c *fiber.Ctx) error {
-	conference, geterr := database.GetConference(c.Params("confId"))
-	if geterr := database.HandleGetConferenceError(geterr, c); geterr != nil {
+	conferences, dberr := database.GetConferences(true, "_id", c.Params("confId"))
+	if dberr != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
-			"message": "server side problem occured while reading bookings info from database",
-			"data":    geterr})
+			"message": "server side problem occured while database call",
+			"data":    fmt.Sprint(dberr)})
+	}
+
+	if len(conferences) == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"status":  "error",
+			"message": "conference not found",
+			"data":    nil})
 	}
 
 	var booking model.Booking = model.Booking{}
 	var bookingIndex int = -1
-	for prevBookingIndex, prevBooking := range conference.Bookings {
-		if prevBooking.Id == c.Params("bookingId") && !prevBooking.IsCanceled {
+	for prevBookingIndex, prevBooking := range conferences[0].Bookings {
+		if prevBooking.Id.Hex() == c.Params("bookingId") && !prevBooking.IsCanceled {
 			booking = prevBooking
 			bookingIndex = prevBookingIndex
 			break
-		} else if prevBooking.Id == c.Params("bookingId") && prevBooking.IsCanceled {
+		} else if prevBooking.Id.Hex() == c.Params("bookingId") && prevBooking.IsCanceled {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"status":  "error",
 				"message": "cannot update canceled booking",
@@ -173,6 +206,7 @@ func UpdateBooking(c *fiber.Ctx) error {
 			"data":    err})
 	}
 	updatedBooking.CustomerName = strings.TrimSpace(updatedBooking.CustomerName)
+	deltaTickets := int(booking.TicketsBooked) - int(updatedBooking.TicketsBooked)
 
 	reqPathParts := strings.Split(c.OriginalURL(), "/")
 	var validationErr error = nil
@@ -182,9 +216,17 @@ func UpdateBooking(c *fiber.Ctx) error {
 		validationErr = customerNameValidation(updatedBooking.CustomerName)
 	} else if reqPathParts[len(reqPathParts)-1] == "tickets" {
 		updatedBooking.CustomerName = booking.CustomerName
-		validationErr = ticketsNumberValidation(updatedBooking.TicketsBooked, conference.RemainingTickets)
+		if deltaTickets > 0 {
+			validationErr = ticketsNumberValidation(uint(deltaTickets), conferences[0].RemainingTickets)
+		}
 	} else {
-		validationErr = validateBookingInfoInput(*updatedBooking, conference.RemainingTickets)
+		nameValidationErr := customerNameValidation(updatedBooking.CustomerName)
+		ticketsValidationErr := ticketsNumberValidation(uint(deltaTickets), conferences[0].RemainingTickets)
+		if nameValidationErr != nil {
+			validationErr = nameValidationErr
+		} else {
+			validationErr = ticketsValidationErr
+		}
 	}
 	if validationErr != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -206,40 +248,58 @@ func UpdateBooking(c *fiber.Ctx) error {
 			"data":    err})
 	}
 
-	conference.Bookings[bookingIndex] = *updatedBooking
-	conference.RemainingTickets = conference.TotalTickets - database.GetTotalBookings(conference)
-	commiterr := database.CommitConferenceToLocalDB(conference)
-	if commiterr != nil {
+	updatedConf := conferences[0]
+	updatedConf.Bookings[bookingIndex] = *updatedBooking
+	updatedConf.RemainingTickets = uint(int(updatedConf.RemainingTickets) + deltaTickets)
+
+	updateErr := database.UpdateCollectionItem(
+		updatedConf.Id,
+		updatedConf,
+		database.ConferencesCollection)
+	if updateErr != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
-			"message": "server side problem occured while saving booking info to the database",
-			"data":    commiterr})
+			"message": "db error while updating bookings info",
+			"data":    fmt.Sprint(updateErr)})
 	}
 
 	return c.SendString(string(updatedBookingJson))
 }
 
 func CancelBooking(c *fiber.Ctx) error {
-	conference, geterr := database.GetConference(c.Params("confId"))
-	if geterr := database.HandleGetConferenceError(geterr, c); geterr != nil {
+	conferences, dberr := database.GetConferences(true, "_id", c.Params("confId"))
+	if dberr != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
-			"message": "server side problem occured while reading bookings info from database",
-			"data":    geterr})
+			"message": "server side problem occured while database call",
+			"data":    fmt.Sprint(dberr)})
 	}
 
+	if len(conferences) == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"status":  "error",
+			"message": "conference not found",
+			"data":    nil})
+	}
+
+	conference := conferences[0]
+
 	for bookingIndex, booking := range conference.Bookings {
-		if booking.Id == c.Params("bookingId") && !booking.IsCanceled {
+		if booking.Id.Hex() == c.Params("bookingId") && !booking.IsCanceled {
 			booking.UpdatedAt = time.Now().Format(time.RFC3339)
 			booking.IsCanceled = true
 			conference.RemainingTickets += booking.TicketsBooked
 			conference.Bookings[bookingIndex] = booking
-			commiterr := database.CommitConferenceToLocalDB(conference)
-			if commiterr != nil {
+
+			updateErr := database.UpdateCollectionItem(
+				conference.Id,
+				conference,
+				database.ConferencesCollection)
+			if updateErr != nil {
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 					"status":  "error",
-					"message": "server side problem occured while saving booking info to the database",
-					"data":    commiterr})
+					"message": "db error while updating bookings info",
+					"data":    fmt.Sprint(updateErr)})
 			}
 
 			bookingJson, err := json.MarshalIndent(booking, "", "	")
@@ -251,7 +311,7 @@ func CancelBooking(c *fiber.Ctx) error {
 			}
 
 			return c.SendString(string(bookingJson))
-		} else if booking.Id == c.Params("bookingId") && booking.IsCanceled {
+		} else if booking.Id.Hex() == c.Params("bookingId") && booking.IsCanceled {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"status":  "error",
 				"message": "booking is already canceled",
@@ -262,20 +322,7 @@ func CancelBooking(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 		"status":  "error",
 		"message": "booking not found",
-		"data":    fmt.Errorf("no booking with id %v for conference id %v", c.Params("bookingId"), c.Params("confId"))})
-}
-
-func validateBookingInfoInput(booking model.Booking, remainingTickets uint) error {
-	nameValidationErr := customerNameValidation(booking.CustomerName)
-	ticketsValidationErr := ticketsNumberValidation(booking.TicketsBooked, remainingTickets)
-	if nameValidationErr != nil {
-		return nameValidationErr
-	}
-	if ticketsValidationErr != nil {
-		return ticketsValidationErr
-	}
-
-	return nil
+		"data":    fmt.Sprintf("no booking with id %v for conference id %v", c.Params("bookingId"), c.Params("confId"))})
 }
 
 func customerNameValidation(customerName string) error {

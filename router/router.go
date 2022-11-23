@@ -10,7 +10,7 @@ import (
 
 func SetupRoutes(app *fiber.App) {
 	api := app.Group("/", logger.New())
-	api.Get("/hello", handlers.GetHello)
+	api.Get("/hello/:id", middleware.Authorize(), handlers.GetHello)
 
 	//Login
 	login := api.Group("/login")
