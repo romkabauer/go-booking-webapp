@@ -206,7 +206,7 @@ func UpdateBooking(c *fiber.Ctx) error {
 			"data":    err})
 	}
 	updatedBooking.CustomerName = strings.TrimSpace(updatedBooking.CustomerName)
-	deltaTickets := int(booking.TicketsBooked) - int(updatedBooking.TicketsBooked)
+	deltaTickets := int(updatedBooking.TicketsBooked) - int(booking.TicketsBooked)
 
 	reqPathParts := strings.Split(c.OriginalURL(), "/")
 	var validationErr error = nil
@@ -217,14 +217,18 @@ func UpdateBooking(c *fiber.Ctx) error {
 	} else if reqPathParts[len(reqPathParts)-1] == "tickets" {
 		updatedBooking.CustomerName = booking.CustomerName
 		if deltaTickets > 0 {
-			validationErr = ticketsNumberValidation(uint(deltaTickets), conferences[0].RemainingTickets)
+			validationErr = ticketsNumberValidation(
+				updatedBooking.TicketsBooked,
+				conferences[0].RemainingTickets+booking.TicketsBooked)
 		}
 	} else {
 		nameValidationErr := customerNameValidation(updatedBooking.CustomerName)
-		ticketsValidationErr := ticketsNumberValidation(uint(deltaTickets), conferences[0].RemainingTickets)
 		if nameValidationErr != nil {
 			validationErr = nameValidationErr
-		} else {
+		} else if deltaTickets > 0 {
+			ticketsValidationErr := ticketsNumberValidation(
+				updatedBooking.TicketsBooked,
+				conferences[0].RemainingTickets+booking.TicketsBooked)
 			validationErr = ticketsValidationErr
 		}
 	}
@@ -250,7 +254,7 @@ func UpdateBooking(c *fiber.Ctx) error {
 
 	updatedConf := conferences[0]
 	updatedConf.Bookings[bookingIndex] = *updatedBooking
-	updatedConf.RemainingTickets = uint(int(updatedConf.RemainingTickets) + deltaTickets)
+	updatedConf.RemainingTickets = uint(int(updatedConf.RemainingTickets) - deltaTickets)
 
 	updateErr := database.UpdateCollectionItem(
 		updatedConf.Id,
