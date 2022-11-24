@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"booking-webapp/database"
+	"booking-webapp/errors"
 	"booking-webapp/model"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -14,94 +14,64 @@ import (
 )
 
 func GetConferences(c *fiber.Ctx) error {
-	conferences, dberr := database.GetConferences(isAdminRole(c), "")
-	if dberr != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "server side problem occured while database call",
-			"data":    fmt.Sprint(dberr)})
+	conferences, dbErr := database.GetConferences(isAdminRole(c), "")
+	if dbErr != nil {
+		return errors.RaiseInternalServerError(c, fmt.Sprintf("database error: %v", dbErr))
 	}
 
-	conferencesJson, err := json.MarshalIndent(conferences, "", "	")
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "server side problem occured while loading conferences info",
-			"data":    err})
+	conferencesJson, jsonErr := json.MarshalIndent(conferences, "", "	")
+	if jsonErr != nil {
+		return errors.RaiseInternalServerError(c, fmt.Sprintf("json serialization error: %v", jsonErr))
 	}
 
 	return c.SendString(string(conferencesJson))
 }
 
 func GetConference(c *fiber.Ctx) error {
-	conferences, dberr := database.GetConferences(isAdminRole(c), "_id", c.Params("id"))
-	if dberr != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "server side problem occured while database call",
-			"data":    fmt.Sprint(dberr)})
+	conferences, dbErr := database.GetConferences(isAdminRole(c), "_id", c.Params("confId"))
+	if dbErr != nil {
+		return errors.RaiseInternalServerError(c, fmt.Sprintf("database error: %v", dbErr))
 	}
-
 	if len(conferences) == 0 {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"status":  "error",
-			"message": "conference not found",
-			"data":    nil})
+		return errors.RaiseNotFoundError(c, fmt.Sprintf("conference %v not found", c.Params("confId")))
 	}
 
-	conferenceJson, err := json.MarshalIndent(conferences[0], "", "	")
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "server side problem occured while sending conference info to client",
-			"data":    err})
+	conferenceJson, jsonErr := json.MarshalIndent(conferences[0], "", "	")
+	if jsonErr != nil {
+		return errors.RaiseInternalServerError(c, fmt.Sprintf("json serialization error: %v", jsonErr))
 	}
+
 	return c.SendString(string(conferenceJson))
 }
 
 func CreateNewConference(c *fiber.Ctx) error {
 	if !isAdminRole(c) {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"status":  "error",
-			"message": "lack of permissions",
-			"data":    nil})
+		return errors.RaisePermissionsError(c, "only admin can perform this operation")
 	}
 
 	newConf := new(model.Conference)
-	if err := c.BodyParser(newConf); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "error",
-			"message": "incorrect input for conferrence parameters",
-			"data":    err})
+	if jsonErr := c.BodyParser(newConf); jsonErr != nil {
+		return errors.RaiseBadRequestError(c, fmt.Sprintf("unacceptable conference parameters: %v", jsonErr))
 	}
-	newConf.ConferenceName = strings.TrimSpace(newConf.ConferenceName)
-
-	validationErr := validateConferenceInfoInput(*newConf, true)
-	if validationErr != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "error",
-			"message": "incorrect input for conferrence parameters",
-			"data":    fmt.Sprint(validationErr)})
-	}
-
 	newConf.Id = primitive.NewObjectID()
+	newConf.ConferenceName = strings.TrimSpace(newConf.ConferenceName)
 	newConf.RemainingTickets = newConf.TotalTickets
 	newConf.Bookings = []model.Booking{}
 
-	newConfJson, err := json.MarshalIndent(newConf, "", "	")
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "server side problem occured while sending conference info to client",
-			"data":    err})
+	validationErr := validateConferenceInfoInput(*newConf, true)
+	if validationErr != nil {
+		return errors.RaiseBadRequestError(c,
+			fmt.Sprintf("incorrect input for conference parameters: %v", validationErr))
 	}
 
-	commiterr := database.WriteToCollection(*newConf, database.ConferencesCollection)
-	if commiterr != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "error while saving transaction result to the database",
-			"data":    commiterr})
+	writeErr := database.WriteToCollection(*newConf, database.ConferencesCollection)
+	if writeErr != nil {
+		return errors.RaiseInternalServerError(c, fmt.Sprintf("database error: %v", writeErr))
+	}
+
+	newConfJson, jsonErr := json.MarshalIndent(newConf, "", "	")
+	if jsonErr != nil {
+		return errors.RaiseInternalServerError(c, fmt.Sprintf("json serialization error: %v", jsonErr))
 	}
 
 	return c.SendString(string(newConfJson))
@@ -109,37 +79,24 @@ func CreateNewConference(c *fiber.Ctx) error {
 
 func UpdateConference(c *fiber.Ctx) error {
 	if !isAdminRole(c) {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"status":  "error",
-			"message": "lack of permissions",
-			"data":    nil})
+		return errors.RaisePermissionsError(c, "only admin can perform this operation")
 	}
 
-	conferences, dberr := database.GetConferences(isAdminRole(c), "_id", c.Params("id"))
-	if dberr != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "server side problem occured while database call",
-			"data":    fmt.Sprint(dberr)})
+	conferences, dbErr := database.GetConferences(isAdminRole(c), "_id", c.Params("confId"))
+	if dbErr != nil {
+		return errors.RaiseInternalServerError(c, fmt.Sprintf("database error: %v", dbErr))
 	}
-
 	if len(conferences) == 0 {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"status":  "error",
-			"message": "conference not found",
-			"data":    nil})
+		return errors.RaiseNotFoundError(c, fmt.Sprintf("conference %v not found", c.Params("confId")))
 	}
 
 	updatedConf := new(model.Conference)
-
-	if err := c.BodyParser(updatedConf); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "error",
-			"message": "incorrect input for conferrence parameters",
-			"data":    fmt.Sprint(err)})
+	if jsonErr := c.BodyParser(updatedConf); jsonErr != nil {
+		return errors.RaiseBadRequestError(c, fmt.Sprintf("unacceptable conference parameters: %v", jsonErr))
 	}
 	updatedConf.Id = conferences[0].Id
 	updatedConf.ConferenceName = strings.TrimSpace(updatedConf.ConferenceName)
+	updatedConf.Bookings = conferences[0].Bookings
 
 	reqPathParts := strings.Split(c.OriginalURL(), "/")
 	var validationErr error = nil
@@ -154,37 +111,24 @@ func UpdateConference(c *fiber.Ctx) error {
 		validationErr = validateConferenceInfoInput(*updatedConf, false)
 	}
 	if validationErr != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "error",
-			"message": "incorrect input for conferrence parameters",
-			"data":    fmt.Sprint(validationErr)})
+		return errors.RaiseBadRequestError(c,
+			fmt.Sprintf("incorrect input for conference parameters: %v", validationErr))
 	}
 
-	totalBookings, err := database.GetTotalBookings(updatedConf.Id)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "error",
-			"message": "database error occured",
-			"data":    fmt.Sprint(err)})
+	totalBookings, dbErr := database.GetTotalBookings(updatedConf.Id)
+	if dbErr != nil {
+		return errors.RaiseInternalServerError(c, fmt.Sprintf("database error: %v", dbErr))
 	}
-
 	updatedConf.RemainingTickets = updatedConf.TotalTickets - totalBookings
-	updatedConf.Bookings = conferences[0].Bookings
 
-	updatedConfJson, err := json.MarshalIndent(updatedConf, "", "	")
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "server side problem occured while sending conference info to client",
-			"data":    err})
+	updateErr := database.UpdateCollectionItem(updatedConf.Id, updatedConf, database.ConferencesCollection)
+	if updateErr != nil {
+		return errors.RaiseInternalServerError(c, fmt.Sprintf("database error: %v", updateErr))
 	}
 
-	commiterr := database.UpdateCollectionItem(updatedConf.Id, updatedConf, database.ConferencesCollection)
-	if commiterr != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "error while saving transaction result to the database",
-			"data":    commiterr})
+	updatedConfJson, jsonErr := json.MarshalIndent(updatedConf, "", "	")
+	if jsonErr != nil {
+		return errors.RaiseInternalServerError(c, fmt.Sprintf("json serialization error: %v", jsonErr))
 	}
 
 	return c.SendString(string(updatedConfJson))
@@ -192,22 +136,16 @@ func UpdateConference(c *fiber.Ctx) error {
 
 func DeleteConference(c *fiber.Ctx) error {
 	if !isAdminRole(c) {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"status":  "error",
-			"message": "lack of permissions",
-			"data":    nil})
+		return errors.RaisePermissionsError(c, "only admin can perform this operation")
 	}
 	deleteErr := database.DeleteFromCollection(c.Params("id"), database.ConferencesCollection)
 	if deleteErr != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "error",
-			"message": "unsuccessful deletion",
-			"data":    fmt.Sprintf("failed to delete: %v", deleteErr)})
+		return errors.RaiseBadRequestError(c, fmt.Sprintf("failed to delete: %v", deleteErr))
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"status":  "success",
-		"message": "conference deleted",
+		"message": "entity deleted",
 		"data":    fmt.Sprintf("conference with id %v was deleted", c.Params("id"))})
 }
 
@@ -226,7 +164,7 @@ func validateConferenceInfoInput(conf model.Conference, isNew bool) error {
 
 func isValidConferenceName(name string, isNew bool) error {
 	if len(name) < 2 {
-		return errors.New("conference name is too short")
+		return fmt.Errorf("conference name is too short")
 	}
 
 	nameExists, err := database.IfConferenceNameAlreadyExist(name)
@@ -234,7 +172,7 @@ func isValidConferenceName(name string, isNew bool) error {
 		return err
 	}
 	if nameExists {
-		return errors.New("conference name already exist")
+		return fmt.Errorf("conference name already exist")
 	}
 
 	return nil
@@ -242,7 +180,7 @@ func isValidConferenceName(name string, isNew bool) error {
 
 func isValidConferenceTotalTickets(conf model.Conference, isNew bool) error {
 	if conf.TotalTickets == 0 {
-		return errors.New("conference cannot have zero tickets for distribution")
+		return fmt.Errorf("conference cannot have zero tickets for distribution")
 	}
 	if !isNew {
 		totalBookings, err := database.GetTotalBookings(conf.Id)
@@ -251,7 +189,9 @@ func isValidConferenceTotalTickets(conf model.Conference, isNew bool) error {
 		}
 
 		if conf.TotalTickets < totalBookings {
-			return fmt.Errorf("cannot assign %v as total tickets, %v tickets already booked", conf.TotalTickets, totalBookings)
+			return fmt.Errorf("cannot assign %v as total tickets, %v tickets already booked",
+				conf.TotalTickets,
+				totalBookings)
 		}
 		return nil
 	}

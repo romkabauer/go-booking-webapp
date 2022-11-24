@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -135,9 +136,35 @@ func UpdateCollectionItem(objId primitive.ObjectID, objData any, collection *mon
 	return nil
 }
 
+func InsertBooking(conference model.Conference, booking model.Booking, index ...uint) error {
+	conference.RemainingTickets = conference.RemainingTickets - booking.TicketsBooked
+	if len(index) == 0 {
+		conference.Bookings = append(conference.Bookings, booking)
+	} else if booking.IsCanceled {
+		conference.RemainingTickets += booking.TicketsBooked
+		booking.UpdatedAt = time.Now().Format(time.RFC3339)
+		conference.Bookings[index[0]] = booking
+	} else {
+		deltaTickets := int(booking.TicketsBooked) - int(conference.Bookings[index[0]].TicketsBooked)
+		conference.RemainingTickets = uint(int(conference.RemainingTickets) - deltaTickets)
+		booking.UpdatedAt = time.Now().Format(time.RFC3339)
+		conference.Bookings[index[0]] = booking
+	}
+
+	updateErr := UpdateCollectionItem(
+		conference.Id,
+		conference,
+		ConferencesCollection)
+
+	return updateErr
+}
+
 func DeleteFromCollection(objId string, collection *mongo.Collection) error {
-	result, deleteErr := ConferencesCollection.DeleteOne(mongoCtx, bson.D{
-		{Key: "_id", Value: toBsonArray([]string{objId}, true)[0]}})
+	result, deleteErr := ConferencesCollection.DeleteOne(
+		mongoCtx,
+		bson.D{
+			{Key: "_id", Value: toBsonArray([]string{objId}, true)[0]},
+		})
 	if deleteErr != nil {
 		return fmt.Errorf("%v", deleteErr)
 	}
